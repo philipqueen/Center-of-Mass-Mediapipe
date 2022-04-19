@@ -2,92 +2,58 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import math
+
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
-#MAKE DETECTIONS
-cap = cv2.VideoCapture('highlining_small.mp4')
+### center of mass functions - eventually we would make these a class
+#change these to take in tuples (proximal_x, proximal_y), (distal_x, distal_y)
+def calculateCOM(proximal, distal, com_proximal_multiplier):
+    segment_length = distal-proximal
+    segment_COM = proximal + (com_proximal_multiplier*segment_length)
+    return segment_COM
 
-###resize video
+def calculate_foot_COM(heel, ankle, foot_index):
+    COM_foot = (heel + ankle + foot_index)/3
+    return COM_foot
 
-    
+def calculate_hand_COM(wrist, index, pinky, com_proximal_multiplier):
+    knuckle_width = pinky - index
+    Third_metacarple = index + (knuckle_width/3)
+    Palm_segment = Third_metacarple - wrist
+    COM_hand = wrist + (com_proximal_multiplier*Palm_segment)
+    return COM_hand
 
-###
+def calculate_total_COM(COM_Segments, dimension):
+    '''Calculate total body COM based on COM of all segments, separately for x and y. 
+    Dimension should be 0 for x and 1 for y.'''
 
-#cap = cv2.VideoCapture(0, cv2.CAP_DSHOW) ##This uses the webcam as the video feed
-#set up mediapipe instance...this line is accessible by the variable "pose"
+    return sum([COM_Segments[segment][2]*COM_Segments[segment][dimension] for segment in COM_Segments])
 
-#Determine frame size of webcam feed that mediapipe works on, this gives w: 640, h: 480.
-
-####
-
-
-
-
-if cap.isOpened():
-    vid_res_width = cap.get(3)
-    vid_res_height = cap.get(4)
-    
-print('width', vid_res_width)
-print('height', vid_res_height)
-####
-
-### center of mass functions
-def calculateCOM_x(x1, x2, com_proximal_multiplier):
-    segment_length_x = x2-x1
-    COM_x = x1+com_proximal_multiplier*segment_length_x
-    return COM_x
-
-def calculateCOM_y(y1, y2, com_proximal_multiplier):
-    segment_length_y = y2 - y1
-    COM_y = y1+com_proximal_multiplier*segment_length_y
-    return COM_y
-
-def calculate_foot_COM_x(heel_x, ankle_x, foot_index_x):
-    COM_foot_x = (heel_x + ankle_x + foot_index_x)/3
-    return COM_foot_x
-
-def calculate_foot_COM_y(heel_y, ankle_y, foot_index_y):
-    COM_foot_y = (heel_y + ankle_y + foot_index_y)/3
-    return COM_foot_y
-
-def calculate_hand_COM_x(wrist_x, index_x, pinky_x, com_proximal_multiplier):
-    knuckle_width_x = pinky_x - index_x
-    Third_metacarple_x = index_x + knuckle_width_x/3
-    Palm_segment_x = Third_metacarple_x - wrist_x
-    COM_hand_x = wrist_x + com_proximal_multiplier*Palm_segment_x
-    return COM_hand_x
-
-def calculate_hand_COM_y(wrist_y, index_y, pinky_y, com_proximal_multiplier):
-    knuckle_width_y = pinky_y - index_y
-    Third_metacarple_y = index_y + knuckle_width_y/3
-    Palm_segment_y = Third_metacarple_y - wrist_y
-    COM_hand_y = wrist_y + com_proximal_multiplier*Palm_segment_y
-    return COM_hand_y
-
-def calculate_total_COM_x(COM_Segments):
-    Segement_COM_List_x = []
-
-    for key in COM_Segments:
-        COM_of_Segment = COM_Segments[key][2]*COM_Segments[key][0]
-        Segement_COM_List_x.append(COM_of_Segment)
-    COM_total_x = sum(Segement_COM_List_x)
-    return COM_total_x
-
-def calculate_total_COM_y(COM_Segments):
-    Segement_COM_List_y = []
-
-    for key in COM_Segments:
-        COM_of_Segment = COM_Segments[key][2]*COM_Segments[key][1]
-        Segement_COM_List_y.append(COM_of_Segment)
-    COM_total_y = sum(Segement_COM_List_y)
-    return COM_total_y
 #### 
 
+#eventually this would be def main()
 
-with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
-    while cap.isOpened(): #loop through feed
-        ret, frame = cap.read() #getting an image from feed, 'frame' is our webcam feed variable
+#set file path to the video location
+path = "/Users/Philip/Documents/GitHub/Learning/Videos/delaney_almighty.mp4"
+
+#capture the video using opencv
+cap = cv2.VideoCapture(path)
+
+#setup properties for video writer
+width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+width_height = (int(width), int(height))
+fps = cap.get(cv2.CAP_PROP_FPS)
+output_path = "/Users/Philip/Documents/GitHub/Learning/Videos/delaney_almighty_COM.mp4"
+
+#create video writer
+writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, width_height)
+
+
+with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+    for frame_idx in range(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))): #loop through feed
+        ret, frame = cap.read() #getting an image from feed, 'frame' is our video feed variable
         
         image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) #recolor image into the RGB format (for mediapipe)
         image.flags.writeable = False
@@ -109,9 +75,8 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             Hands = {
                 'L_hand' : [landmarks[15], landmarks[19], landmarks[17], 0.7474, 0, 0],
                 'R_hand' : [landmarks[16],landmarks[20], landmarks[18], 0.7474, 0, 0],
-                
             }
-            Hands_2 = {}
+          
             for key in Hands:
                 #Knuckle_width is defined as the segment from the distal ends of the second to fifth metacarples (index to pinky landmarks)
                 wrist_x = Hands[key][0].x
@@ -122,10 +87,12 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 pinky_y = Hands[key][2].y
                 com_proximal_multiplier = Hands[key][3] 
 
-                COM_hand_x = calculate_hand_COM_x(wrist_x, index_x, pinky_x, com_proximal_multiplier)
-                COM_hand_y = calculate_hand_COM_y(wrist_y, index_y, pinky_y, com_proximal_multiplier)
+                COM_hand_x = calculate_hand_COM(wrist_x, index_x, pinky_x, com_proximal_multiplier)
+                COM_hand_y = calculate_hand_COM(wrist_y, index_y, pinky_y, com_proximal_multiplier)
 
-                cv2.circle(image, center=tuple(np.multiply((COM_hand_x, COM_hand_y), [vid_res_width, vid_res_height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
+                cv2.circle(image, center=tuple(np.multiply((COM_hand_x, COM_hand_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
+                
+                #update Hands dictionary with COM positions
                 Hands[key][4] = COM_hand_x
                 Hands[key][5] = COM_hand_y
 
@@ -139,19 +106,14 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             }
 
             for key in Feet:
-                heel_x = Feet[key][0].x
-                ankle_x = Feet[key][1].x
-                foot_index_x = Feet[key][2].x
+                #arguments are ordered heel, ankle, foot index
+                COM_foot_x = calculate_foot_COM(Feet[key][0].x, Feet[key][1].x, Feet[key][2].x)
+                COM_foot_y = calculate_foot_COM(Feet[key][0].y, Feet[key][1].y, Feet[key][2].y)
 
-                heel_y = Feet[key][0].y
-                ankle_y = Feet[key][1].y
-                foot_index_y = Feet[key][2].y
+                #plot feet COM
+                cv2.circle(image, center=tuple(np.multiply((COM_foot_x, COM_foot_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
 
-                COM_foot_x = calculate_foot_COM_x(heel_x, ankle_x, foot_index_x)
-                COM_foot_y = calculate_foot_COM_y(heel_y, ankle_y, foot_index_y)
-
-                cv2.circle(image, center=tuple(np.multiply((COM_foot_x, COM_foot_y), [vid_res_width, vid_res_height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
-
+                #update Feet dictionary with COM positions
                 Feet[key][3] = COM_foot_x
                 Feet[key][4] = COM_foot_y
 
@@ -161,11 +123,11 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             MidShoulder_y = (landmarks[12].y + landmarks[11].y)/2
             MidHip_x = (landmarks[24].x + landmarks[23].x)/2
             MidHip_y = (landmarks[24].y + landmarks[23].y)/2
-            TrunkCOM_x = calculateCOM_x(MidShoulder_x, MidHip_x, 0.3782)
-            TrunkCOM_y = calculateCOM_y(MidShoulder_y, MidHip_y, 0.3782)
+            TrunkCOM_x = calculateCOM(MidShoulder_x, MidHip_x, 0.3782)
+            TrunkCOM_y = calculateCOM(MidShoulder_y, MidHip_y, 0.3782)
 
-            cv2.circle(image, center=tuple(np.multiply((TrunkCOM_x, TrunkCOM_y), [vid_res_width, vid_res_height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
-            # cv2.circle(image, center=tuple((TrunkCOM_x*vid_res_width, TrunkCOM_y*vid_res_height)), radius=4, color=(255,0,0), thickness=2)
+            cv2.circle(image, center=tuple(np.multiply((TrunkCOM_x, TrunkCOM_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
+            # cv2.circle(image, center=tuple((TrunkCOM_x*width, TrunkCOM_y*height)), radius=4, color=(255,0,0), thickness=2)
 
             #Body Segment Dictionary format: key = body segment, % value = [proximal joint landmark values, distal joint landmark values, COM as a % of segment length]
             Body_Segments = {
@@ -189,13 +151,13 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 y2 = Body_Segments[key][1].y
                 com_proximal_multiplier = Body_Segments[key][2]
 
-                COM_x = calculateCOM_x(x1, x2, com_proximal_multiplier)
-                COM_y = calculateCOM_y(y1, y2, com_proximal_multiplier)
+                COM_x = calculateCOM(x1, x2, com_proximal_multiplier)
+                COM_y = calculateCOM(y1, y2, com_proximal_multiplier)
                 #print('com_x =', COM_x)
                 #print('com_y =', COM_y)
             
-            #Render COM_x and COM_y of the 8 limb segments onto the video feed. 
-                cv2.circle(image, center=tuple(np.multiply((COM_x, COM_y), [vid_res_width, vid_res_height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
+                #Render COM_x and COM_y of the 8 limb segments onto the video feed. 
+                cv2.circle(image, center=tuple(np.multiply((COM_x, COM_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
 
                 Body_Segments[key][3] = COM_x
                 Body_Segments[key][4] = COM_y
@@ -217,11 +179,11 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 'Right_Foot' : [Feet['R_foot'][3], Feet['R_foot'][4], 0.0129], 
             }
 
-            COM_total_x = calculate_total_COM_x(COM_Segments)
-            COM_total_y = calculate_total_COM_y(COM_Segments)
+            COM_total_x = calculate_total_COM(COM_Segments, 0) #0 points to x dimension
+            COM_total_y = calculate_total_COM(COM_Segments, 1) #1 points to y dimension
                 
 
-            cv2.circle(image, center=tuple(np.multiply((COM_total_x, COM_total_y), [vid_res_width, vid_res_height]).astype(int)), radius=1, color=(0,255,0), thickness=5)
+            cv2.circle(image, center=tuple(np.multiply((COM_total_x, COM_total_y), [width, height]).astype(int)), radius=2, color=(0,255,0), thickness=5)
                 # So, I think I need to have the for loop give me the percent multiplier but use something along the lines of:
                 # values = dictionary.values()
                 # total = sum(values)
@@ -234,16 +196,24 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         #... 'mp_pose.POSE_CONNECTIONS' tells you whats connected to what (shoulder - elbow for example)
         # I commeted out the line below (skeleton landmarks and segments) because the video was getting a little crowded and I couldn't see the head COM behind the cluster of face landmarks. 
 
-        # mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+        '''mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
+                                mp_drawing.DrawingSpec(color=(0,0,128), thickness=2, circle_radius=2), #set color for joints in BGR
+                                mp_drawing.DrawingSpec(color=(0,128,128), thickness=2, circle_radius=2) #set color for connections in BGR
+                                )'''
 
-        cv2.imshow('Mediapipe Feed', image) #will allow us to visualize image with the landmarks drawn
+        cv2.imshow('COM Skeleton', image) #will allow us to visualize image with the landmarks drawn
+
+        #write video frame to file
+        writer.write(image)
 
         if cv2.waitKey(10) & 0xFF == ord('q'): #break out of feed by typing 'q' key
             break
 
     cap.release()
     cv2.destroyAllWindows() #will close any window open with your image
+    cv2.waitKey(1) #helps close windows for certain mac users
 
+    #release video writer
+    writer.release()
 
-    #THIS WORKS, THANKS AARON for teaching me how to implement for loops within a defined function
     
