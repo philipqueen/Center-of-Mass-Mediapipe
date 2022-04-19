@@ -7,7 +7,7 @@ mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
 ### center of mass functions - eventually we would make these a class
-#change these to take in tuples (proximal_x, proximal_y), (distal_x, distal_y)
+#change these to take in tuples (proximal_x, proximal_y), (distal_x, distal_y) - maybe clunkier than it's worth for readability
 def calculateCOM(proximal, distal, com_proximal_multiplier):
     segment_length = distal-proximal
     segment_COM = proximal + (com_proximal_multiplier*segment_length)
@@ -30,25 +30,32 @@ def calculate_total_COM(COM_Segments, dimension):
 
     return sum([COM_Segments[segment][2]*COM_Segments[segment][dimension] for segment in COM_Segments])
 
+def calculate_COM_velocity(current_position, previous_position, fps):
+    return (current_position - previous_position) * fps #we multiply change in position by fps to find velocity because fps is the inverse of time between readings
+
 #### 
 
 #eventually this would be def main()
 
 #set file path to the video location
-path = "/Users/Philip/Documents/GitHub/Learning/Videos/delaney_almighty.mp4"
+path = "/Users/Philip/Documents/Humon Research Lab/Cool Stuff/dmitri_trampoline_floence.mp4"
 
 #capture the video using opencv
 cap = cv2.VideoCapture(path)
 
 #setup properties for video writer
-width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-width_height = (int(width), int(height))
+width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 fps = cap.get(cv2.CAP_PROP_FPS)
-output_path = "/Users/Philip/Documents/GitHub/Learning/Videos/delaney_almighty_COM.mp4"
+output_path = "/Users/Philip/Documents/Humon Research Lab/Cool Stuff/dmitri_trampoline_floence_COM.mp4"
 
 #create video writer
-writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, width_height)
+writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
+
+#create variable for storing COM data for calculating derivates
+prev_COM_total = (0,0)
+
+prev_COM_velocity = (0,0)
 
 
 with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
@@ -58,14 +65,12 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
         image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) #recolor image into the RGB format (for mediapipe)
         image.flags.writeable = False
         
-        #make detection, accessing our pose variable. processing the pose 
-        #..variable to get our detections and then storing those detections
-        #..into the 'results' variable
+        #make pose detection in MediaPipe
         results = pose.process(image)
         image.flags.writeable = True #setting this to true allows the drawing of the landmarks onto the image
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR) #recolor image back to BGR (for opencv)
 
-        #### NEW: EXTRACT LANDMARKS####
+        #### EXTRACT LANDMARKS####
         try: #allows for the random dropped frames in webcam video feeds
             landmarks = results.pose_landmarks.landmark
             
@@ -96,8 +101,6 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
                 Hands[key][4] = COM_hand_x
                 Hands[key][5] = COM_hand_y
 
-            # print('update',  Hands[key][4], Hands[key][5]) # YAY, now the fourth thing in the list for each key is changed to COM_hand_x and the 5th thing to COM_hand_y each time it iterates. 
-            # print("original", Hands)
 
             #COM of FEET, using the centroid of the triangle formed from heel-ankle-"foot-index" landmarks, arranged in that order in the dictionary values.
             Feet = {
@@ -153,8 +156,6 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
 
                 COM_x = calculateCOM(x1, x2, com_proximal_multiplier)
                 COM_y = calculateCOM(y1, y2, com_proximal_multiplier)
-                #print('com_x =', COM_x)
-                #print('com_y =', COM_y)
             
                 #Render COM_x and COM_y of the 8 limb segments onto the video feed. 
                 cv2.circle(image, center=tuple(np.multiply((COM_x, COM_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
@@ -183,34 +184,55 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
             COM_total_y = calculate_total_COM(COM_Segments, 1) #1 points to y dimension
                 
 
-            cv2.circle(image, center=tuple(np.multiply((COM_total_x, COM_total_y), [width, height]).astype(int)), radius=2, color=(0,255,0), thickness=5)
+            cv2.circle(image, center=tuple(np.multiply((COM_total_x, COM_total_y), [width, height]).astype(int)), radius=2, color=(0,255,0), thickness=6)
                 # So, I think I need to have the for loop give me the percent multiplier but use something along the lines of:
                 # values = dictionary.values()
                 # total = sum(values)
                 # the currrent for loop calculation isn't summing anything together. 
 
+            #calculate and plot velocity of total body COM
+
+            if prev_COM_total:
+                x_velocity = calculate_COM_velocity(COM_total_x, prev_COM_total[0], fps)
+                y_velocity = calculate_COM_velocity(COM_total_y, prev_COM_total[1], fps)
+
+                #determines magnitude of the velocity arrow drawn
+                arrow_scale_factor = 80
+
+                #set start and end point for arrow 
+                arrow_start = tuple(np.multiply((COM_total_x, COM_total_y), [width, height]).astype(int)) #start point if just the COM
+                arrow_end = tuple(np.add(arrow_start, np.multiply((x_velocity, y_velocity), arrow_scale_factor)).astype(int)) #end point is start point with velocity times arrow size added to it
+
+                #draw the arrow
+                cv2.arrowedLine(image, arrow_start, arrow_end, color = (0,0,128), thickness = 4)
+
+            
+
+            #update previous values for calculation
+            prev_COM_total = (COM_total_x, COM_total_y)
+            prev_COM_velocity = (x_velocity, y_velocity)
+
         except:
             pass
 
-        # Render Detections ... 'results.pose_landmarks' delivers the coordinantes of the landmarks.
-        #... 'mp_pose.POSE_CONNECTIONS' tells you whats connected to what (shoulder - elbow for example)
-        # I commeted out the line below (skeleton landmarks and segments) because the video was getting a little crowded and I couldn't see the head COM behind the cluster of face landmarks. 
-
+        #remove these triple quotes to display skeleton        
         '''mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
                                 mp_drawing.DrawingSpec(color=(0,0,128), thickness=2, circle_radius=2), #set color for joints in BGR
                                 mp_drawing.DrawingSpec(color=(0,128,128), thickness=2, circle_radius=2) #set color for connections in BGR
                                 )'''
 
-        cv2.imshow('COM Skeleton', image) #will allow us to visualize image with the landmarks drawn
+        #display image - comment out to just save video
+        cv2.imshow('COM Display (q to quit)', image)
 
-        #write video frame to file
+        #write video frame to file - comment out to just view video
         writer.write(image)
 
         if cv2.waitKey(10) & 0xFF == ord('q'): #break out of feed by typing 'q' key
             break
 
+    #release camera and close all windows
     cap.release()
-    cv2.destroyAllWindows() #will close any window open with your image
+    cv2.destroyAllWindows()
     cv2.waitKey(1) #helps close windows for certain mac users
 
     #release video writer
