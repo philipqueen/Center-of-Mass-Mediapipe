@@ -30,9 +30,6 @@ def calculate_total_COM(COM_Segments, dimension):
 
     return sum([COM_Segments[segment][2]*COM_Segments[segment][dimension] for segment in COM_Segments])
 
-def calculate_COM_velocity(current_position, previous_position, fps):
-    return (current_position - previous_position) * fps #we multiply change in position by fps to find velocity because fps is the inverse of time between readings
-
 #### 
 
 #eventually this would be def main()
@@ -51,11 +48,6 @@ output_path = "/Users/Philip/Documents/Humon Research Lab/Cool Stuff/dmitri_tram
 
 #create video writer
 writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
-
-#create variable for storing COM data for calculating derivates
-prev_COM_total = (0,0)
-
-prev_COM_velocity = (0,0)
 
 
 with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
@@ -95,7 +87,7 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
                 COM_hand_x = calculate_hand_COM(wrist_x, index_x, pinky_x, com_proximal_multiplier)
                 COM_hand_y = calculate_hand_COM(wrist_y, index_y, pinky_y, com_proximal_multiplier)
 
-                cv2.circle(image, center=tuple(np.multiply((COM_hand_x, COM_hand_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
+                cv2.circle(image, center=tuple(np.multiply((COM_hand_x, COM_hand_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=3)
                 
                 #update Hands dictionary with COM positions
                 Hands[key][4] = COM_hand_x
@@ -114,7 +106,7 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
                 COM_foot_y = calculate_foot_COM(Feet[key][0].y, Feet[key][1].y, Feet[key][2].y)
 
                 #plot feet COM
-                cv2.circle(image, center=tuple(np.multiply((COM_foot_x, COM_foot_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
+                cv2.circle(image, center=tuple(np.multiply((COM_foot_x, COM_foot_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=3)
 
                 #update Feet dictionary with COM positions
                 Feet[key][3] = COM_foot_x
@@ -129,7 +121,7 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
             TrunkCOM_x = calculateCOM(MidShoulder_x, MidHip_x, 0.3782)
             TrunkCOM_y = calculateCOM(MidShoulder_y, MidHip_y, 0.3782)
 
-            cv2.circle(image, center=tuple(np.multiply((TrunkCOM_x, TrunkCOM_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
+            cv2.circle(image, center=tuple(np.multiply((TrunkCOM_x, TrunkCOM_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=3)
             # cv2.circle(image, center=tuple((TrunkCOM_x*width, TrunkCOM_y*height)), radius=4, color=(255,0,0), thickness=2)
 
             #Body Segment Dictionary format: key = body segment, % value = [proximal joint landmark values, distal joint landmark values, COM as a % of segment length]
@@ -158,7 +150,7 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
                 COM_y = calculateCOM(y1, y2, com_proximal_multiplier)
             
                 #Render COM_x and COM_y of the 8 limb segments onto the video feed. 
-                cv2.circle(image, center=tuple(np.multiply((COM_x, COM_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=2)
+                cv2.circle(image, center=tuple(np.multiply((COM_x, COM_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=3)
 
                 Body_Segments[key][3] = COM_x
                 Body_Segments[key][4] = COM_y
@@ -180,37 +172,17 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
                 'Right_Foot' : [Feet['R_foot'][3], Feet['R_foot'][4], 0.0129], 
             }
 
+    
             COM_total_x = calculate_total_COM(COM_Segments, 0) #0 points to x dimension
             COM_total_y = calculate_total_COM(COM_Segments, 1) #1 points to y dimension
                 
 
-            cv2.circle(image, center=tuple(np.multiply((COM_total_x, COM_total_y), [width, height]).astype(int)), radius=2, color=(0,255,0), thickness=6)
+            cv2.circle(image, center=tuple(np.multiply((COM_total_x, COM_total_y), [width, height]).astype(int)), radius=2, color=(0,255,0), thickness=8)
                 # So, I think I need to have the for loop give me the percent multiplier but use something along the lines of:
                 # values = dictionary.values()
                 # total = sum(values)
                 # the currrent for loop calculation isn't summing anything together. 
 
-            #calculate and plot velocity of total body COM
-
-            if prev_COM_total:
-                x_velocity = calculate_COM_velocity(COM_total_x, prev_COM_total[0], fps)
-                y_velocity = calculate_COM_velocity(COM_total_y, prev_COM_total[1], fps)
-
-                #determines magnitude of the velocity arrow drawn
-                arrow_scale_factor = 80
-
-                #set start and end point for arrow 
-                arrow_start = tuple(np.multiply((COM_total_x, COM_total_y), [width, height]).astype(int)) #start point if just the COM
-                arrow_end = tuple(np.add(arrow_start, np.multiply((x_velocity, y_velocity), arrow_scale_factor)).astype(int)) #end point is start point with velocity times arrow size added to it
-
-                #draw the arrow
-                cv2.arrowedLine(image, arrow_start, arrow_end, color = (0,0,128), thickness = 4)
-
-            
-
-            #update previous values for calculation
-            prev_COM_total = (COM_total_x, COM_total_y)
-            prev_COM_velocity = (x_velocity, y_velocity)
 
         except:
             pass
