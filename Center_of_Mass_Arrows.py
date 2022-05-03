@@ -165,11 +165,58 @@ def get_COM_dict(landmarks):
     
     return COM_Segments
 
+def get_whole_video_COM(results):
+    print("calculating COM...")
+    whole_video_COM = []
+    for result in results:
+        try:
+            landmarks = result.pose_landmarks.landmark
+            COM_dict = get_COM_dict(landmarks)
+            whole_video_COM.append(COM_dict)
+        except:
+            #if pose isn't detected, we fill out dictionary with NotANumber values
+            nan_dict = {'Head': [math.nan, math.nan, math.nan],
+            'Trunk': [math.nan, math.nan, math.nan],
+            'Left_Upper_Arm': [math.nan, math.nan, math.nan],
+            'Right_Upper_Arm': [math.nan, math.nan, math.nan],
+            'Left_Forearm': [math.nan, math.nan, math.nan],
+            'Right_Forearm': [math.nan, math.nan, math.nan],
+            'Left_Hand': [math.nan, math.nan, math.nan],
+            'Right_Hand': [math.nan, math.nan, math.nan],
+            'Left_Thigh': [math.nan, math.nan, math.nan],
+            'Right_Thigh': [math.nan, math.nan, math.nan],
+            'Left_Shin': [math.nan, math.nan, math.nan],
+            'Right_Shin': [math.nan, math.nan, math.nan],
+            'Left_Foot': [math.nan, math.nan, math.nan],
+            'Right_Foot': [math.nan, math.nan, math.nan],
+            'Total': [math.nan, math.nan]}
+            whole_video_COM.append(nan_dict)
+
+    return whole_video_COM
+
+def get_total_values(whole_video_COM, index):
+    '''Gets the total body COM value and returns it as a numpy array.
+    Set index to 0 for X values and 1 for Y values.'''
+
+    total = [frame['Total'][index] for frame in whole_video_COM]
+
+    np_total = np.asarray(total)
+    return np_total
+
+def pad_array(array):
+    '''Adds a 0 to the beginning of a numpy array.'''
+
+    array = np.concatenate(([0],array)) #concatenate our array to the [0] array
+    #array = np.append(array, 0) #this adds a 0 to the end, 
+
+    return array
+
+
 def mediapipe_video(path):
     #capture the video using opencv
     cap = cv2.VideoCapture(path)
 
-    results_array = []
+    results_array = [] #this will store pose estimations from mediapipe
 
     print("getting pose estimation...")
     with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
@@ -205,6 +252,65 @@ def display_COM(whole_video_COM, frame_idx, frame, width, height):
         except:
             pass
 
+def display_arrow(x, y, change_x, change_y, frame_idx, frame, width, height):
+    #determines magnitude of the velocity arrow drawn
+    scale_factor = 1000
+
+    #set start and end point for arrow 
+    arrow_start = tuple(np.multiply((x[frame_idx], y[frame_idx]), [width, height]).astype(int)) #start point if just the COM
+    arrow_end = tuple(np.add(arrow_start, np.multiply((change_x[frame_idx], change_y[frame_idx]), scale_factor)).astype(int)) #end point is start point with velocity times arrow size added to it
+
+    #draw the arrow
+    cv2.arrowedLine(frame, arrow_start, arrow_end, color = (0,0,128), thickness = 8)
+
+def display_final_video(path, whole_video_COM, total_x, total_y, velocity_x, velocity_y):
+    #reset capture
+    cap = cv2.VideoCapture(path)
+
+    #setup properties for video writer
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+
+    #create path for saving video output
+    output_path = path.split(".")[0] + "_COM" + ".mp4"
+
+    #create video writer
+    writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
+
+    print("displaying and writing video...")
+    for frame_idx in range(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))): #loop through feed
+        ret, frame = cap.read() #getting an image from feed, 'frame' is our video feed variable
+
+        #display COM dots
+        display_COM(whole_video_COM, frame_idx, frame, width, height)   
+
+        #display velocity arrow
+        try: #handle NaNs where COM isn't tracked
+            display_arrow(total_x, total_y, velocity_x, velocity_y, frame_idx, frame, width, height)
+        except:
+            pass
+
+        #display image - comment out to just save video
+        cv2.imshow('COM Display (q to quit)', frame)
+
+        #write video frame to file - comment out to just view video
+        writer.write(frame)
+
+        if cv2.waitKey(10) & 0xFF == ord('q'): #break out of feed by typing 'q' key
+            break
+
+            
+
+    #release camera and close all windows
+    cap.release()
+    cv2.destroyAllWindows()
+    cv2.waitKey(1) #helps close windows for certain mac users
+
+
+    #release video writer
+    writer.release()
+
 ##########################################################################################################################
 ########################################################################################################################## 
 ########################################################################################################################## 
@@ -214,124 +320,40 @@ def display_COM(whole_video_COM, frame_idx, frame, width, height):
 #eventually this would be def main()
 
 #set file path to the video location
-path = "/Users/Philip/Documents/GitHub/Learning/Videos/delaney_almighty.mp4"
+path = "/Users/Philip/Documents/GitHub/Learning/Videos/trampoline_backflip.mp4"
 
-'''#capture the video using opencv
-cap = cv2.VideoCapture(path)
-
-results_array = []
-
-print("getting pose estimation...")
-with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
-    for frame_idx in range(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))): #loop through feed
-        ret, frame = cap.read() #getting an image from feed, 'frame' is our video feed variable
-        
-        image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) #recolor image into the RGB format (for mediapipe)
-        image.flags.writeable = False
-        
-        #make pose detection in MediaPipe
-        results = pose.process(image)
-       
-        results_array.append(results)
-
-        if cv2.waitKey(10) & 0xFF == ord('q'): #break out of feed by typing 'q' key
-            break
-
-cap.release()
-
-np_results = np.asarray(results_array)'''
-
-np_results = mediapipe_video(path)
-
-'''landmark_array = []
-for result in np_results:
-    try:
-        landmarks = result.pose_landmarks.landmark
-        landmark_array.append(landmarks)
-    except:
-        landmark_array.append()'''
-
-'''#create path for saving results
-np_path = path.split(".")[0] + ".npy"
-
-np.save(np_path, np_results)
-print(".npy file saved")'''
-
-print("calculating COM...")
-whole_video_COM = []
-for result in np_results:
-    try:
-        landmarks = result.pose_landmarks.landmark
-        COM_dict = get_COM_dict(landmarks)
-        whole_video_COM.append(COM_dict)
-    except:
-        #if pose isn't detected, we fill out dictionary with NotANumber values
-        nan_dict = {'Head': [math.nan, math.nan, math.nan],
-         'Trunk': [math.nan, math.nan, math.nan],
-         'Left_Upper_Arm': [math.nan, math.nan, math.nan],
-         'Right_Upper_Arm': [math.nan, math.nan, math.nan],
-         'Left_Forearm': [math.nan, math.nan, math.nan],
-         'Right_Forearm': [math.nan, math.nan, math.nan],
-         'Left_Hand': [math.nan, math.nan, math.nan],
-         'Right_Hand': [math.nan, math.nan, math.nan],
-         'Left_Thigh': [math.nan, math.nan, math.nan],
-         'Right_Thigh': [math.nan, math.nan, math.nan],
-         'Left_Shin': [math.nan, math.nan, math.nan],
-         'Right_Shin': [math.nan, math.nan, math.nan],
-         'Left_Foot': [math.nan, math.nan, math.nan],
-         'Right_Foot': [math.nan, math.nan, math.nan],
-         'Total': [math.nan, math.nan]}
-        whole_video_COM.append(nan_dict)
-
-
-#print(whole_video_COM[200])
-
-#create path for saving results
+#create path for saving and loading COM data
 pickle_path = path.split(".")[0] + ".pkl"
 
-#open pickle file and write dictionary
-with open(pickle_path,"wb") as f:
-    pickle.dump(whole_video_COM,f)
+#change this to 0 if running on a new video
+load_results = 0
+
+#instantiate class (eventually)
+
+if load_results:
+    #open and read pickle file
+    with open(pickle_path,"rb") as f:
+        whole_video_COM = pickle.load(f)
+else: 
+    #get mediapipe results
+    results = mediapipe_video(path)
+
+    #make list of dictionaries containing COM data
+    whole_video_COM = get_whole_video_COM(results)
+
+    
+    #save mediapipe results in pickle file
+    with open(pickle_path,"wb") as f:
+        pickle.dump(whole_video_COM,f)
+
+#this gets total COM data out of our list of dictionaries
+total_x = get_total_values(whole_video_COM, 0)
+total_y = get_total_values(whole_video_COM, 1)
+
+#calculate velocities
+velocity_x = np.diff(pad_array(total_x)) #use padded array to make sure arrays stay the same length
+velocity_y = np.diff(pad_array(total_y))
 
 
-#figure out save and load of mediapipe results
-
-#figure out how to put total_COM in it's own array to calculate velocity and acceleration
-
-#reset capture
-cap = cv2.VideoCapture(path)
-
-#setup properties for video writer
-width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-fps = cap.get(cv2.CAP_PROP_FPS)
-output_path = "/Users/Philip/Documents/GitHub/Learning/Videos/delaney_almighty_COM.mp4"
-
-#create video writer
-writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
-
-print("displaying and writing video...")
-for frame_idx in range(int(cap.get(cv2.CAP_PROP_FRAME_COUNT))): #loop through feed
-    ret, frame = cap.read() #getting an image from feed, 'frame' is our video feed variable
-
-    display_COM(whole_video_COM, frame_idx, frame, width, height)
-
-    #display image - comment out to just save video
-    cv2.imshow('COM Display (q to quit)', frame)
-
-    #write video frame to file - comment out to just view video
-    writer.write(frame)
-
-    if cv2.waitKey(10) & 0xFF == ord('q'): #break out of feed by typing 'q' key
-        break
-
-        
-
-#release camera and close all windows
-cap.release()
-cv2.destroyAllWindows()
-cv2.waitKey(1) #helps close windows for certain mac users
-
-
-#release video writer
-writer.release()
+#display and write video with COM points and velocity arrows
+display_final_video(path, whole_video_COM, total_x, total_y, velocity_x, velocity_y)
