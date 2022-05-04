@@ -3,6 +3,7 @@ import mediapipe as mp
 import numpy as np
 import math
 import pickle
+import os
 
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
@@ -194,11 +195,11 @@ def get_whole_video_COM(results):
 
     return whole_video_COM
 
-def get_total_values(whole_video_COM, index):
+def get_COM_values(whole_video_COM, key, index):
     '''Gets the total body COM value and returns it as a numpy array.
     Set index to 0 for X values and 1 for Y values.'''
 
-    total = [frame['Total'][index] for frame in whole_video_COM]
+    total = [frame[key][index] for frame in whole_video_COM]
 
     np_total = np.asarray(total)
     return np_total
@@ -211,6 +212,23 @@ def pad_array(array):
 
     return array
 
+def get_rate_data(whole_video_COM, key):
+    #this gets total COM data out of our list of dictionaries
+    x = get_COM_values(whole_video_COM, key, 0)
+    y = get_COM_values(whole_video_COM, key, 1)
+
+    #calculate velocities
+    velocity_x = np.diff(pad_array(x)) #use padded array to make sure arrays stay the same length
+    velocity_y = np.diff(pad_array(y))
+
+    #calculate accelerations
+    accel_x = np.diff(pad_array(velocity_x)) #use padded array to make sure arrays stay the same length
+    accel_y = np.diff(pad_array(velocity_y))
+
+    #store total COM total, velocity, and accelerations in list for easy passing to functions
+    rate_data = [x, y, velocity_x, velocity_y, accel_x, accel_y]
+
+    return rate_data
 
 def mediapipe_video(path):
     #capture the video using opencv
@@ -252,18 +270,19 @@ def display_COM(whole_video_COM, frame_idx, frame, width, height):
         except:
             pass
 
-def display_arrow(x, y, change_x, change_y, frame_idx, frame, width, height):
-    #determines magnitude of the velocity arrow drawn
-    scale_factor = 1000
+def display_arrow(data_list, derivative_order, scale_factor, color, frame_idx, frame, width, height):
+    #calculate data_list index based on derivative order (1 for velocity, 2 for acceleration)
+    deriv_x = derivative_order * 2
+    deriv_y = (derivative_order * 2) + 1 
 
-    #set start and end point for arrow 
-    arrow_start = tuple(np.multiply((x[frame_idx], y[frame_idx]), [width, height]).astype(int)) #start point if just the COM
-    arrow_end = tuple(np.add(arrow_start, np.multiply((change_x[frame_idx], change_y[frame_idx]), scale_factor)).astype(int)) #end point is start point with velocity times arrow size added to it
+    #set start and end point for arrow (scale factor determines magnitude of drawn arrow)
+    arrow_start = tuple(np.multiply((data_list[0][frame_idx], data_list[1][frame_idx]), [width, height]).astype(int)) #start point if just the COM
+    arrow_end = tuple(np.add(arrow_start, np.multiply((data_list[deriv_x][frame_idx], data_list[deriv_y][frame_idx]), scale_factor)).astype(int)) #end point is start point with velocity times arrow size added to it
 
     #draw the arrow
-    cv2.arrowedLine(frame, arrow_start, arrow_end, color = (0,0,128), thickness = 8)
+    cv2.arrowedLine(frame, arrow_start, arrow_end, color, thickness = 8)
 
-def display_final_video(path, whole_video_COM, total_x, total_y, velocity_x, velocity_y):
+def display_final_video(path, whole_video_COM, rate_data1, rate_data2, rate_data3):
     #reset capture
     cap = cv2.VideoCapture(path)
 
@@ -285,9 +304,11 @@ def display_final_video(path, whole_video_COM, total_x, total_y, velocity_x, vel
         #display COM dots
         display_COM(whole_video_COM, frame_idx, frame, width, height)   
 
-        #display velocity arrow
+        #display velocity arrows
         try: #handle NaNs where COM isn't tracked
-            display_arrow(total_x, total_y, velocity_x, velocity_y, frame_idx, frame, width, height)
+            display_arrow(rate_data1, 1, 5000, (0,0,128), frame_idx, frame, width, height)
+            display_arrow(rate_data2, 1, 3000, (128,0,0), frame_idx, frame, width, height)
+            display_arrow(rate_data3, 1, 3000, (128,0,0), frame_idx, frame, width, height)
         except:
             pass
 
@@ -320,21 +341,19 @@ def display_final_video(path, whole_video_COM, total_x, total_y, velocity_x, vel
 #eventually this would be def main()
 
 #set file path to the video location
-path = "/Users/Philip/Documents/GitHub/Learning/Videos/trampoline_backflip.mp4"
+path = "/Users/Philip/Documents/Humon Research Lab/Cool Stuff/planar_slackline_test.MP4"
 
 #create path for saving and loading COM data
 pickle_path = path.split(".")[0] + ".pkl"
 
-#change this to 0 if running on a new video
-load_results = 0
-
 #instantiate class (eventually)
 
-if load_results:
+if os.path.exists(pickle_path): #this checks if there is already a pickle file containing COM information
+    print("loading COM data from file...")
     #open and read pickle file
     with open(pickle_path,"rb") as f:
         whole_video_COM = pickle.load(f)
-else: 
+else:  #if we don't have saved results, get the results and save them for future use
     #get mediapipe results
     results = mediapipe_video(path)
 
@@ -346,14 +365,9 @@ else:
     with open(pickle_path,"wb") as f:
         pickle.dump(whole_video_COM,f)
 
-#this gets total COM data out of our list of dictionaries
-total_x = get_total_values(whole_video_COM, 0)
-total_y = get_total_values(whole_video_COM, 1)
-
-#calculate velocities
-velocity_x = np.diff(pad_array(total_x)) #use padded array to make sure arrays stay the same length
-velocity_y = np.diff(pad_array(total_y))
-
+total_rate_data = get_rate_data(whole_video_COM, 'Total')
+lhand_rate_data = get_rate_data(whole_video_COM, 'Left_Hand')
+rhand_rate_data = get_rate_data(whole_video_COM, 'Right_Hand')
 
 #display and write video with COM points and velocity arrows
-display_final_video(path, whole_video_COM, total_x, total_y, velocity_x, velocity_y)
+display_final_video(path, whole_video_COM, total_rate_data, lhand_rate_data, rhand_rate_data)
