@@ -167,7 +167,7 @@ def get_COM_dict(landmarks):
     return COM_Segments
 
 def normalize_landmarks(landmarks, width, height):
-    #this doesn't give the same values as the naive script, and doesn't fix the non-plotting problem
+    #this doesn't give the same values as the naive script, need to investigate more
     for landmark in landmarks:
         landmark[0] /= width
         landmark[1] /= height
@@ -301,7 +301,7 @@ def display_arrow(data_list, derivative_order, scale_factor, color, frame_idx, f
     #draw the arrow
     cv2.arrowedLine(frame, arrow_start, arrow_end, color, thickness = 8)
 
-def display_final_video(path, whole_video_COM):
+def display_final_video(path, whole_video_COM, rate_data1, rate_data2, rate_data3, rate_data4, rate_data5):
     #reset capture
     cap = cv2.VideoCapture(path)
 
@@ -325,13 +325,15 @@ def display_final_video(path, whole_video_COM):
         #display COM dots
         display_COM(whole_video_COM, frame_idx, frame, width, height)   
 
-        ''' #display velocity arrows
+         #display velocity arrows
         try: #handle NaNs where COM isn't tracked
-            display_arrow(rate_data1, 1, 5000, (0,0,128), frame_idx, frame, width, height)
-            display_arrow(rate_data2, 1, 3000, (128,0,0), frame_idx, frame, width, height)
-            display_arrow(rate_data3, 1, 3000, (128,0,0), frame_idx, frame, width, height)
+            display_arrow(rate_data1, 1, 20000, (0,0,128), frame_idx, frame, width, height)
+            display_arrow(rate_data2, 1, 6000, (0,128,0), frame_idx, frame, width, height)
+            display_arrow(rate_data3, 1, 6000, (0,128,0), frame_idx, frame, width, height)
+            display_arrow(rate_data4, 1, 6000, (0,128,0), frame_idx, frame, width, height)
+            display_arrow(rate_data5, 1, 6000, (0,128,0), frame_idx, frame, width, height)
         except:
-            pass'''
+            pass
 
         #display image - comment out to just save video
         cv2.imshow('COM Display (q to quit)', frame)
@@ -380,9 +382,18 @@ mediaPipeData = np.load(data_path)
 whole_video_COM = get_whole_video_COM(mediaPipeData, camera, video_path)
 print(whole_video_COM[0])
 
-'''total_rate_data = get_rate_data(whole_video_COM, 'Total')
+#rate data holds position, velocity, and acceleration data for a given segment
+total_rate_data = get_rate_data(whole_video_COM, 'Total')
 lhand_rate_data = get_rate_data(whole_video_COM, 'Left_Hand')
-rhand_rate_data = get_rate_data(whole_video_COM, 'Right_Hand')'''
+rhand_rate_data = get_rate_data(whole_video_COM, 'Right_Hand')
+lfoot_rate_data = get_rate_data(whole_video_COM, 'Left_Foot')
+rfoot_rate_data = get_rate_data(whole_video_COM, 'Right_Foot')
+print(total_rate_data)
+#save total body rate data as .npy file
+total_rate_npy = np.asarray(total_rate_data)
+print(total_rate_npy)
+npy_save_path = session_folder_path + "/DataArrays/" + "TotalBodyCOMdata.npy"
+np.save(npy_save_path, total_rate_data)
 
 #display and write video with COM points and velocity arrows
-display_final_video(video_path, whole_video_COM)
+#display_final_video(video_path, whole_video_COM, total_rate_data, lhand_rate_data, rhand_rate_data, lfoot_rate_data, rfoot_rate_data)
