@@ -38,7 +38,7 @@ def COM_finite_difference(current, previous, fps):
 #eventually this would be def main()
 
 #set file path to the video location
-path = "/Users/Philip/Documents/Humon Research Lab/Cool Stuff/planar_slackline_test.mp4"
+path = "/Users/Philip/Documents/Humon Research Lab/fmc_COM/philip_session2_04_25_22/SyncedVideos/synced_Cam0.mp4"
 
 #capture the video using opencv
 cap = cv2.VideoCapture(path)
@@ -47,7 +47,7 @@ cap = cv2.VideoCapture(path)
 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 fps = cap.get(cv2.CAP_PROP_FPS)
-output_path = "/Users/Philip/Documents/Humon Research Lab/Cool Stuff/planar_slackline_test_arrows_naive1.mp4"
+output_path = "/Users/Philip/Documents/Humon Research Lab/fmc_COM/philip_session2_04_25_22/synced_Cam0_skeleton.mp4"
 
 #create video writer
 writer = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (width, height))
@@ -66,6 +66,12 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
         results = pose.process(image)
         image.flags.writeable = True #setting this to true allows the drawing of the landmarks onto the image
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR) #recolor image back to BGR (for opencv)
+
+        #remove these triple quotes to display skeleton        
+        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
+                                mp_drawing.DrawingSpec(color=(255,255,255), thickness=1, circle_radius=1), #set color for joints in BGR
+                                mp_drawing.DrawingSpec(color=(0,255,0), thickness=8, circle_radius=2) #set color for connections in BGR
+                                )
 
         #### EXTRACT LANDMARKS####
         try: #allows for the random dropped frames in webcam video feeds
@@ -92,7 +98,7 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
                 COM_hand_x = calculate_hand_COM(wrist_x, index_x, pinky_x, com_proximal_multiplier)
                 COM_hand_y = calculate_hand_COM(wrist_y, index_y, pinky_y, com_proximal_multiplier)
 
-                cv2.circle(image, center=tuple(np.multiply((COM_hand_x, COM_hand_y), [width, height]).astype(int)), radius=1, color=(128,0,0), thickness=6)
+                #cv2.circle(image, center=tuple(np.multiply((COM_hand_x, COM_hand_y), [width, height]).astype(int)), radius=1, color=(128,0,0), thickness=6)
                 
                 #update Hands dictionary with COM positions
                 Hands[key][4] = COM_hand_x
@@ -111,7 +117,10 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
                 COM_foot_y = calculate_foot_COM(Feet[key][0].y, Feet[key][1].y, Feet[key][2].y)
 
                 #plot feet COM
-                cv2.circle(image, center=tuple(np.multiply((COM_foot_x, COM_foot_y), [width, height]).astype(int)), radius=1, color=(128,0,0), thickness=6)
+                if key == 'L_foot':
+                    cv2.circle(image, center=tuple(np.multiply((COM_foot_x, COM_foot_y), [width, height]).astype(int)), radius=1, color=(255,0,0), thickness=32)
+                else:
+                    cv2.circle(image, center=tuple(np.multiply((COM_foot_x, COM_foot_y), [width, height]).astype(int)), radius=1, color=(0,0,255), thickness=32)
 
                 #update Feet dictionary with COM positions
                 Feet[key][3] = COM_foot_x
@@ -126,7 +135,7 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
             TrunkCOM_x = calculateCOM(MidShoulder_x, MidHip_x, 0.3782)
             TrunkCOM_y = calculateCOM(MidShoulder_y, MidHip_y, 0.3782)
 
-            cv2.circle(image, center=tuple(np.multiply((TrunkCOM_x, TrunkCOM_y), [width, height]).astype(int)), radius=1, color=(128,0,0), thickness=6)
+            #cv2.circle(image, center=tuple(np.multiply((TrunkCOM_x, TrunkCOM_y), [width, height]).astype(int)), radius=1, color=(128,0,0), thickness=6)
             # cv2.circle(image, center=tuple((TrunkCOM_x*width, TrunkCOM_y*height)), radius=4, color=(255,0,0), thickness=2)
 
             #Body Segment Dictionary format: key = body segment, % value = [proximal joint landmark values, distal joint landmark values, COM as a % of segment length]
@@ -155,7 +164,7 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
                 COM_y = calculateCOM(y1, y2, com_proximal_multiplier)
             
                 #Render COM_x and COM_y of the 8 limb segments onto the video feed. 
-                cv2.circle(image, center=tuple(np.multiply((COM_x, COM_y), [width, height]).astype(int)), radius=1, color=(128,0,0), thickness=6)
+                #cv2.circle(image, center=tuple(np.multiply((COM_x, COM_y), [width, height]).astype(int)), radius=1, color=(128,0,0), thickness=6)
 
                 Body_Segments[key][3] = COM_x
                 Body_Segments[key][4] = COM_y
@@ -181,8 +190,8 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
             COM_total_x = calculate_total_COM(COM_Segments, 0) #0 points to x dimension
             COM_total_y = calculate_total_COM(COM_Segments, 1) #1 points to y dimension
                 
-
-            cv2.circle(image, center=tuple(np.multiply((COM_total_x, COM_total_y), [width, height]).astype(int)), radius=2, color=(0,255,0), thickness=16)
+            # plot total body COM
+            cv2.circle(image, center=tuple(np.multiply((COM_total_x, COM_total_y), [width, height]).astype(int)), radius=2, color=(0,255,255), thickness=40)
                 # So, I think I need to have the for loop give me the percent multiplier but use something along the lines of:
                 # values = dictionary.values()
                 # total = sum(values)
@@ -197,14 +206,14 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
                 y_velocity = COM_finite_difference(COM_total_y, prev_COM_total[1], fps)
 
                 #determines magnitude of the velocity arrow drawn
-                velocity_scale_factor = 300
+                velocity_scale_factor = 500
 
                 #set start and end point for arrow 
                 arrow_start = tuple(np.multiply((COM_total_x, COM_total_y), [width, height]).astype(int)) #start point if just the COM
                 arrow_end = tuple(np.add(arrow_start, np.multiply((x_velocity, y_velocity), velocity_scale_factor)).astype(int)) #end point is start point with velocity times arrow size added to it
 
                 #draw the arrow
-                cv2.arrowedLine(image, arrow_start, arrow_end, color = (0,0,128), thickness = 8)
+                cv2.arrowedLine(image, arrow_start, arrow_end, color = (0,0,128), thickness = 16)
 
                 '''
 
@@ -282,13 +291,6 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
         except:
             pass
 
-
-        #remove these triple quotes to display skeleton        
-        '''mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
-                                mp_drawing.DrawingSpec(color=(0,0,128), thickness=2, circle_radius=2), #set color for joints in BGR
-                                mp_drawing.DrawingSpec(color=(0,128,128), thickness=2, circle_radius=2) #set color for connections in BGR
-                                )'''
-
         #display image - comment out to just save video
         cv2.imshow('COM Display (q to quit)', image)
 
@@ -303,5 +305,6 @@ with mp_pose.Pose(model_complexity = 2, min_detection_confidence=0.5, min_tracki
     cv2.destroyAllWindows()
     cv2.waitKey(1) #helps close windows for certain mac users
 
+    print("All done!")
     #release video writer
     writer.release()
